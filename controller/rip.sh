@@ -5,8 +5,9 @@ rip_show() {
   declare -a LIST
   IFS=$'\n'
   declare COUNT=0
-  for LINE in $(cat ${APPROOT}/db/rip); do
-    LIST[$COUNT]=$LINE
+  for LINE in $(cat "${APPROOT}/db/rip"); do
+    html_escape "$LINE"
+    LIST[$COUNT]=$REPLY
     COUNT=$((COUNT+1))
   done
   IFS=${IFS_SAVE}
@@ -14,7 +15,8 @@ rip_show() {
 }
 
 rip_create() {
-  echo "${REQUEST_name}" >> ${APPROOT}/db/rip
-  declare -r NAME=${REQUEST_name}
+  printf '%s\n' "${REQUEST_name}" >> "${APPROOT}/db/rip"
+  html_escape "${REQUEST_name}"
+  declare -r NAME=$REPLY
   response
 }

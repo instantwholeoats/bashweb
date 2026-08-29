@@ -20,7 +20,7 @@ OS: Mac OS Catalina 10.15.5
 Bash: GNU bash, version 3.2.57(1)-release (x86_64-apple-darwin19)
 
 ## 準備
-MaxOSで動作させる場合は、事前にbrewでwgetをインストールしておいてください。
+`curl`、`shasum`、Python 3を利用できるようにしてください。HTTP処理本体はBashで、Python標準ライブラリの小さなTCPランチャーが外部入力のサイズと処理時間を制限します。
 
 ## dependency install
 テンプレートエンジンとして使用している[Mustache Templates in Bash](https://github.com/tests-always-included/mo)、及び[tcpserver](http://cr.yp.to/ucspi-tcp/tcpserver.html)をインストールします。
@@ -30,8 +30,16 @@ $ ./bashweb.sh install
 
 ## Server start
 ```sh
-$ .bashweb.sh start
+$ ./bashweb.sh start
 ```
+
+初期状態では外部公開を避けるため、`127.0.0.1:8080`だけで待ち受けます。変更する場合は`BIND_ADDRESS`と`PORT`を指定します。
+
+```sh
+BIND_ADDRESS=127.0.0.1 PORT=8081 ./bashweb.sh start
+```
+
+このリポジトリはBashでHTTPの仕組みを学ぶための実験用です。TLS、認証、堅牢なHTTPパーサーを備えた本番用Webサーバーとしては使用しないでください。
 
 ## 使い方
 
@@ -111,3 +119,12 @@ bash3の制約により、連想配列は使用できません。
 `/log` 配下にログが吐き出されます。  
 出力されるログレベルは、`DEBUG`、`INFO`、`WARN`、`ERROR`の4種類です。  
 `/config`でどのレベルのログを出力するか設定することができます。
+
+## テスト
+
+外部入力がシェルコードとして実行されないこと、フォーム解析、ルーティング、静的ファイルのパストラバーサル防止を確認します。
+
+```sh
+bash tests/security.sh
+find . -path './vendor' -prune -o -name '*.sh' -type f -exec bash -n {} +
+```

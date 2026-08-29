@@ -6,23 +6,24 @@ declare -r MIME_TYPE_ICO="image/x-icon"
 declare -r MIME_TYPE_TXT="text/plain"
 declare -r MIME_TYPE_HTML="text/html"
 
-create_static_index() {
-  declare -r ESCAPED_APPROOT=$(echo ${APPROOT//_/__} | sed 's/\//_s/g')
-  for STATIC_FILE in $(find ${APPROOT}/static -type f); do
-    declare ESCAPED_FILE_NAME=$(echo ${STATIC_FILE//_/__} | sed 's/\//_s/g' | sed 's/\./_d/g')
-    declare KEY=$(echo ${ESCAPED_FILE_NAME} | sed "s/^${ESCAPED_APPROOT}_sstatic//")
-    eval ${KEY}=${STATIC_FILE}
-  done
-}
-create_static_index
-
 static_file_loader() {
-  declare -r KEY=$(echo ${1//_/__} | sed 's/\//_s/g' | sed 's/\./_d/g')
-  if [ -n "$(eval echo '${'${KEY}'}')" ];then
-    RESPONSE_FILE=$(eval echo '${'${KEY}'}')
-    declare -r EXT=$(echo ${KEY##*_d} | tr '[a-z]' '[A-Z]')
-    CONTENT_TYPE=$(eval echo '${'MIME_TYPE_${EXT}'}')
-    RESPONSE_CODE=200
-    add_response_code_description
-  fi
+  local request_path=$1
+  local segment candidate extension
+  IFS='/' read -r -a segments <<< "$request_path"
+  for segment in "${segments[@]}"; do
+    [ "$segment" = '..' ] && return
+  done
+  candidate="${APPROOT}/static${request_path}"
+  [ -f "$candidate" ] || return
+  RESPONSE_FILE=$candidate
+  extension=$(printf '%s' "${candidate##*.}" | tr '[:lower:]' '[:upper:]')
+  case "$extension" in
+    JPG|JPEG) CONTENT_TYPE=$MIME_TYPE_JPG ;;
+    PNG) CONTENT_TYPE=$MIME_TYPE_PNG ;;
+    ICO) CONTENT_TYPE=$MIME_TYPE_ICO ;;
+    HTML|HTM) CONTENT_TYPE=$MIME_TYPE_HTML ;;
+    *) CONTENT_TYPE=$MIME_TYPE_TXT ;;
+  esac
+  RESPONSE_CODE=200
+  add_response_code_description
 }
