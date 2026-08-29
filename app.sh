@@ -1,69 +1,88 @@
 #!/bin/bash
 declare -r SESSION_ID=$RANDOM
-declare -r APPROOT=$(cd $(dirname $BASH_SOURCE); pwd)
-source ${APPROOT}/config.sh
-source ${APPROOT}/lib/index.sh
-source ${APPROOT}/vendor/mo/mo
+declare -r APPROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+source "${APPROOT}/config.sh"
+source "${APPROOT}/lib/index.sh"
+source "${APPROOT}/vendor/mo/mo"
 
 # load controllers
-for SCRIPT in $(find ${APPROOT}/controller -name "*.sh"); do
-  source $SCRIPT
-done
+while IFS= read -r SCRIPT; do
+  source "$SCRIPT"
+done < <(find "${APPROOT}/controller" -type f -name '*.sh' -print)
 
-source ${APPROOT}/route.sh
+source "${APPROOT}/route.sh"
 
 # parse HTTP request
-declare INPUT
-read INPUT
-INPUT=`echo ${INPUT} | tr -d "\r"`
-declare HTTP_METHOD=`echo ${INPUT} | cut -f 1 -d " " | tr '[a-z]' '[A-Z]'`
-declare REQUEST_PATH=`echo ${INPUT} | cut -f 2 -d " "`
+declare INPUT HTTP_VERSION REQUEST_TARGET
+IFS=' ' read -r HTTP_METHOD REQUEST_TARGET HTTP_VERSION
+HTTP_METHOD=$(printf '%s' "$HTTP_METHOD" | tr '[:lower:]' '[:upper:]')
+REQUEST_PATH=${REQUEST_TARGET%%\?*}
+declare -r SAFE_PATH_PATTERN='^/[^[:cntrl:] ]*$'
 
-log debug $INPUT
+if ! [[ "$HTTP_METHOD" =~ ^(GET|POST|PUT)$ ]] || ! [[ "$REQUEST_PATH" =~ $SAFE_PATH_PATTERN ]]; then
+  RESPONSE_CODE=400
+  add_response_code_description
+fi
+
+log debug "$HTTP_METHOD $REQUEST_TARGET $HTTP_VERSION"
 while :
 do
-  read INPUT
-  INPUT=`echo ${INPUT} | tr -d "\r"`
+  IFS= read -r INPUT
+  INPUT=${INPUT%$'\r'}
   if [ -z "$INPUT" ]; then
     break
   fi
-  declare HEADER_KEY=$(echo ${INPUT} | cut -f 1 -d ":" | tr '[A-Z]' '[a-z]')
-  declare HEADER_VALUE=$(echo ${INPUT} | cut -f 2 -d ":" | sed 's/^ *//' )
+  declare HEADER_KEY=${INPUT%%:*}
+  HEADER_KEY=$(printf '%s' "$HEADER_KEY" | tr '[:upper:]' '[:lower:]')
+  declare HEADER_VALUE=${INPUT#*:}
+  HEADER_VALUE=${HEADER_VALUE# }
   if [ "${HEADER_KEY}" = "content-type" ]; then
-    declare -r REQUEST_CONTENT_TYPE=${HEADER_VALUE}
+    REQUEST_CONTENT_TYPE=$HEADER_VALUE
   fi
   if [ "${HEADER_KEY}" = "content-length" ]; then
-    declare -r REQUEST_CONTENT_LENGTH=${HEADER_VALUE}
+    REQUEST_CONTENT_LENGTH=$HEADER_VALUE
   fi
-  log debug $INPUT
+  log debug "$HEADER_KEY: $HEADER_VALUE"
 done
 
-if [ "${HTTP_METHOD}" = "POST" -o "${HTTP_METHOD}" = "PUT" ]; then
-  if [ "${REQUEST_CONTENT_TYPE}" = "application/x-www-form-urlencoded" ]; then
-    read -n ${REQUEST_CONTENT_LENGTH} INPUT
-    eval REQUEST_${INPUT//&/;REQUEST_}
+if [ -z "${RESPONSE_CODE:-}" ] && { [ "$HTTP_METHOD" = POST ] || [ "$HTTP_METHOD" = PUT ]; }; then
+  if ! [[ "${REQUEST_CONTENT_LENGTH:-}" =~ ^[0-9]+$ ]]; then
+    RESPONSE_CODE=400
+    add_response_code_description
+  elif [ "$REQUEST_CONTENT_LENGTH" -gt 1048576 ]; then
+    RESPONSE_CODE=413
+    add_response_code_description
+  elif [ "${REQUEST_CONTENT_TYPE:-}" = "application/x-www-form-urlencoded" ]; then
+    IFS= read -r -n "$REQUEST_CONTENT_LENGTH" INPUT
+    if ! parse_form_body "$INPUT"; then
+      RESPONSE_CODE=400
+      add_response_code_description
+    fi
   else
-    log error "Not implemented: ${HTTP_METHOD}, ${REQUEST_CONTENT_TYPE}"
+    RESPONSE_CODE=400
+    add_response_code_description
   fi
 fi
 
 log info "Request received: ${HTTP_METHOD} ${REQUEST_PATH}"
 
 # routing
-if [ "${HTTP_METHOD}" = "GET" ]; then
-  static_file_loader ${REQUEST_PATH}
+if [ -z "${RESPONSE_CODE:-}" ] && [ "${HTTP_METHOD}" = "GET" ]; then
+  static_file_loader "$REQUEST_PATH"
 fi
-if [ -z "${RESPONSE_CODE}" ]; then
-  call_controller ${HTTP_METHOD} ${REQUEST_PATH}
+if [ -z "${RESPONSE_CODE:-}" ]; then
+  call_controller "$HTTP_METHOD" "$REQUEST_PATH"
 fi
 
 # send response
-echo "HTTP/1.0 ${RESPONSE_CODE} ${RESPONSE_CODE_DESCRIPTION}"
-echo "Content-Type: ${CONTENT_TYPE}"
-echo
-if [ -n "$RESPONSE_FILE" ]; then
-  cat $RESPONSE_FILE
+printf 'HTTP/1.0 %s %s\r\n' "$RESPONSE_CODE" "$RESPONSE_CODE_DESCRIPTION"
+printf 'Content-Type: %s\r\n' "${CONTENT_TYPE:-text/plain}"
+printf 'X-Content-Type-Options: nosniff\r\n'
+printf 'Content-Security-Policy: default-src '\''self'\''; base-uri '\''none'\''; frame-ancestors '\''none'\''\r\n'
+printf '\r\n'
+if [ -n "${RESPONSE_FILE:-}" ]; then
+  cat "$RESPONSE_FILE"
 else
-  echo -n ${RESPONSE_BODY}
+  printf '%s' "${RESPONSE_BODY:-}"
 fi
 log info "Responsed ${RESPONSE_CODE} ${RESPONSE_CODE_DESCRIPTION}"

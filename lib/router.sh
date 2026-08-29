@@ -1,14 +1,35 @@
 #!/bin/bash
 
+declare -a ROUTE_METHODS
+declare -a ROUTE_PATHS
+declare -a ROUTE_CONTROLLERS
+
 route() {
-  declare -r METHOD=$(echo $1 | tr '[a-z]' '[A-Z]')
-  declare -r REQUEST_PATH=$(echo ${2//_/__} | sed 's/\//_s/g' | sed 's/\./_d/g')
-  eval _ROUTER_${METHOD}_${REQUEST_PATH}=$3
+  local method
+  method=$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')
+  local path=$2
+  local controller=$3
+  if ! [[ "$method" =~ ^(GET|POST|PUT)$ ]] ||
+    ! [[ "$path" =~ ^/[A-Za-z0-9._/-]*$ ]] ||
+    ! [[ "$controller" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] ||
+    ! declare -F "$controller" >/dev/null; then
+    return 1
+  fi
+  local index=${#ROUTE_METHODS[@]}
+  ROUTE_METHODS[$index]=$method
+  ROUTE_PATHS[$index]=$path
+  ROUTE_CONTROLLERS[$index]=$controller
 }
 
 call_controller() {
-  declare -r METHOD=$(echo $1 | tr '[a-z]' '[A-Z]')
-  declare -r REQUEST_PATH=$(echo ${2//_/__} | sed 's/\//_s/g' | sed 's/\./_d/g')
-  eval '${'_ROUTER_${METHOD}_${REQUEST_PATH}'}'
-  [ "${RESPONSE_CODE+foo}" ] || response 404 404
+  local method=$1
+  local path=$2
+  local index
+  for ((index = 0; index < ${#ROUTE_METHODS[@]}; index++)); do
+    if [ "${ROUTE_METHODS[$index]}" = "$method" ] && [ "${ROUTE_PATHS[$index]}" = "$path" ]; then
+      "${ROUTE_CONTROLLERS[$index]}"
+      return
+    fi
+  done
+  response 404 404
 }

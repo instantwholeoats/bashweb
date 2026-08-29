@@ -1,0 +1,21 @@
+name: Test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check shell syntax
+        run: find . -path './vendor' -prune -o -name '*.sh' -type f -exec bash -n {} +
+      - name: Check Python syntax
+        run: python3 -m py_compile server.py
+      - name: Run security regression tests
+        run: bash tests/security.sh
