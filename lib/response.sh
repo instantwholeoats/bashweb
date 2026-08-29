@@ -2,12 +2,21 @@
 
 html_escape() {
   local value=$1
-  value=${value//&/&amp;}
-  value=${value//</&lt;}
-  value=${value//>/&gt;}
-  value=${value//\"/&quot;}
-  value=${value//\'/&#39;}
-  REPLY=$value
+  local result=""
+  local character
+  local index
+  for ((index = 0; index < ${#value}; index++)); do
+    character=${value:$index:1}
+    case "$character" in
+      '&') result="${result}&amp;" ;;
+      '<') result="${result}&lt;" ;;
+      '>') result="${result}&gt;" ;;
+      '"') result="${result}&quot;" ;;
+      "'") result="${result}&#39;" ;;
+      *) result="${result}${character}" ;;
+    esac
+  done
+  REPLY=$result
 }
 
 response() {
